@@ -1,0 +1,16 @@
+# API Framework
+fastapi>=0.95.0
+uvicorn>=0.21.1
+pydantic>=1.10.7
+
+# Agent Framework
+langchain>=0.0.200
+langchain-community>=0.0.10
+langchain-core>=0.1.0
+
+# LLM Integration
+ollama>=0.1.0
+
+# Utilities
+python-dotenv>=1.0.0
+loguru>=0.7.0
