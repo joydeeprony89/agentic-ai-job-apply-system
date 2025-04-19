@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/agentic-ai-job-apply-system/tree/main/frontend/static/css/main.06be61d0.css",
+    "main.js": "/agentic-ai-job-apply-system/tree/main/frontend/static/js/main.7d87bc01.js",
+    "index.html": "/agentic-ai-job-apply-system/tree/main/frontend/index.html",
+    "main.06be61d0.css.map": "/agentic-ai-job-apply-system/tree/main/frontend/static/css/main.06be61d0.css.map",
+    "main.7d87bc01.js.map": "/agentic-ai-job-apply-system/tree/main/frontend/static/js/main.7d87bc01.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.06be61d0.css",
+    "static/js/main.7d87bc01.js"
+  ]
+}
