@@ -14,7 +14,8 @@ import { fadeIn, slideUp, staggerContainer, scaleUp } from './utils/transitions'
 
 // Import global styles
 import './styles/global.css';
-
+// Import the JobSearchForm
+import JobSearchForm from './components/forms/JobSearchForm';
 // Motion components
 const MotionBox = motion(Box);
 const MotionTypography = motion(Typography);
@@ -299,9 +300,6 @@ const Dashboard = () => {
     </MotionBox>
   );
 };
-
-// Import the JobSearchForm
-import JobSearchForm from './components/forms/JobSearchForm';
 
 const JobSearch = () => (
   <Container maxWidth="lg" sx={{ py: 8 }}>
