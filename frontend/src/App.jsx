@@ -1,9 +1,23 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
-import { Box, Container, Typography, Card, Grid, Button, Stack, Divider } from '@mui/material';
+import { 
+  Box, 
+  Container, 
+  Typography, 
+  Card, 
+  Grid, 
+  Button, 
+  Stack, 
+  Divider, 
+  Alert, 
+  CircularProgress,
+  Chip,
+  TextField
+} from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useInView } from 'react-intersection-observer';
+import { jobDiscoveryApi } from './services/api';
 
 // Import layout components
 import Header from './components/common/Header';
@@ -12,10 +26,11 @@ import Footer from './components/common/Footer';
 // Import animations
 import { fadeIn, slideUp, staggerContainer, scaleUp } from './utils/transitions';
 
+// Import forms
+import JobSearchForm from './components/forms/JobSearchForm';
+
 // Import global styles
 import './styles/global.css';
-// Import the JobSearchForm
-import JobSearchForm from './components/forms/JobSearchForm';
 // Motion components
 const MotionBox = motion(Box);
 const MotionTypography = motion(Typography);
@@ -389,6 +404,471 @@ const Applications = () => (
   </Container>
 );
 
+// Keyword Analysis Component
+const KeywordAnalysis = () => {
+  const [keywords, setKeywords] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [results, setResults] = useState(null);
+
+  // Mock data for demonstration purposes
+  const getMockResults = (keywordArray) => {
+    // Generate enhanced keywords based on input
+    const enhancedKeywords = [...keywordArray];
+    
+    // Add related keywords based on common patterns
+    keywordArray.forEach(keyword => {
+      if (keyword.toLowerCase().includes('python')) {
+        enhancedKeywords.push('data science', 'machine learning', 'django', 'flask');
+      } else if (keyword.toLowerCase().includes('react')) {
+        enhancedKeywords.push('javascript', 'frontend', 'redux', 'web development');
+      } else if (keyword.toLowerCase().includes('data')) {
+        enhancedKeywords.push('analytics', 'visualization', 'sql', 'tableau');
+      } else {
+        // Add some generic tech keywords
+        enhancedKeywords.push('agile', 'cloud computing', 'problem solving');
+      }
+    });
+    
+    // Remove duplicates and original keywords
+    const uniqueEnhanced = [...new Set(enhancedKeywords)];
+    
+    return {
+      original_keywords: keywordArray,
+      enhanced_keywords: uniqueEnhanced,
+      keyword_stats: {
+        total_jobs_found: Math.floor(Math.random() * 5000) + 1000,
+        top_paying_keywords: uniqueEnhanced.slice(0, 3),
+        trending_keywords: uniqueEnhanced.slice(2, 5)
+      }
+    };
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Parse keywords into array
+      const keywordArray = keywords
+        .split(',')
+        .map(keyword => keyword.trim())
+        .filter(keyword => keyword.length > 0);
+      
+      if (keywordArray.length === 0) {
+        throw new Error('Please enter at least one keyword');
+      }
+      
+      try {
+        // Call the API
+        const response = await jobDiscoveryApi.analyzeKeywords(keywordArray);
+        setResults(response.data);
+      } catch (apiError) {
+        console.error('API Error:', apiError);
+        // Use mock data if API fails
+        const mockData = getMockResults(keywordArray);
+        setResults(mockData);
+        setError('Could not connect to the API - showing mock data for demonstration');
+      }
+    } catch (err) {
+      console.error('Error analyzing keywords:', err);
+      setError(err.message || 'An error occurred while analyzing keywords');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Container maxWidth="lg" sx={{ py: 8 }}>
+      <Typography 
+        variant="h2" 
+        sx={{ 
+          mb: 6,
+          fontWeight: 600,
+        }}
+      >
+        Keyword Analysis
+      </Typography>
+      
+      <Card 
+        component="form"
+        onSubmit={handleSubmit}
+        sx={{ 
+          p: 4, 
+          mb: 4,
+          border: '1px solid #d2d2d7',
+          borderRadius: 2,
+        }}
+      >
+        <Typography 
+          variant="h6" 
+          sx={{ 
+            mb: 2,
+          }}
+        >
+          Analyze Keywords
+        </Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+          Enter keywords to analyze and enhance them with our AI-powered system.
+        </Typography>
+        
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={9}>
+            <TextField
+              label="Keywords (comma separated)"
+              value={keywords}
+              onChange={(e) => setKeywords(e.target.value)}
+              placeholder="e.g. python, machine learning, data science"
+              fullWidth
+              required
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                  backgroundColor: 'rgba(0, 0, 0, 0.03)',
+                },
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} md={3}>
+            <Button 
+              variant="contained"
+              type="submit"
+              disabled={loading}
+              fullWidth
+              sx={{ 
+                height: '100%',
+                borderRadius: 2,
+              }}
+            >
+              {loading ? 'Analyzing...' : 'Analyze'}
+            </Button>
+          </Grid>
+        </Grid>
+      </Card>
+      
+      {error && (
+        <Alert severity={error.includes('mock data') ? 'warning' : 'error'} sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
+      
+      {results && (
+        <Card 
+          sx={{ 
+            p: 4,
+            border: '1px solid #d2d2d7',
+            borderRadius: 2,
+          }}
+        >
+          <Typography 
+            variant="h6" 
+            sx={{ 
+              mb: 3,
+            }}
+          >
+            Analysis Results
+          </Typography>
+          
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle1" gutterBottom>
+                Original Keywords:
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
+                {results.original_keywords?.map((keyword, index) => (
+                  <Chip key={index} label={keyword} />
+                ))}
+              </Box>
+            </Grid>
+            
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle1" gutterBottom>
+                Enhanced Keywords:
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
+                {results.enhanced_keywords?.map((keyword, index) => (
+                  <Chip 
+                    key={index} 
+                    label={keyword} 
+                    color={results.original_keywords?.includes(keyword) ? 'default' : 'primary'}
+                  />
+                ))}
+              </Box>
+            </Grid>
+            
+            {results.keyword_stats && (
+              <>
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>
+                    Keyword Statistics:
+                  </Typography>
+                </Grid>
+                
+                <Grid item xs={12} md={4}>
+                  <Card sx={{ p: 2, bgcolor: 'rgba(0, 0, 0, 0.02)' }}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Total Jobs Found:
+                    </Typography>
+                    <Typography variant="h6">
+                      {results.keyword_stats.total_jobs_found?.toLocaleString() || 'N/A'}
+                    </Typography>
+                  </Card>
+                </Grid>
+                
+                <Grid item xs={12} md={4}>
+                  <Card sx={{ p: 2, bgcolor: 'rgba(0, 0, 0, 0.02)' }}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Top Paying Keywords:
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {results.keyword_stats.top_paying_keywords?.map((keyword, index) => (
+                        <Chip 
+                          key={index} 
+                          label={keyword} 
+                          size="small"
+                          color="success"
+                        />
+                      ))}
+                    </Box>
+                  </Card>
+                </Grid>
+                
+                <Grid item xs={12} md={4}>
+                  <Card sx={{ p: 2, bgcolor: 'rgba(0, 0, 0, 0.02)' }}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Trending Keywords:
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {results.keyword_stats.trending_keywords?.map((keyword, index) => (
+                        <Chip 
+                          key={index} 
+                          label={keyword} 
+                          size="small"
+                          color="info"
+                        />
+                      ))}
+                    </Box>
+                  </Card>
+                </Grid>
+              </>
+            )}
+          </Grid>
+        </Card>
+      )}
+    </Container>
+  );
+};
+
+// Platform Stats Component
+const PlatformStats = () => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [stats, setStats] = useState(null);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        // Call the API
+        const response = await jobDiscoveryApi.getStats();
+        
+        // Check if response has data
+        if (response && response.data) {
+          setStats(response.data);
+        } else {
+          throw new Error('No data received from the server');
+        }
+      } catch (err) {
+        console.error('Error fetching platform stats:', err);
+        setError(err.message || 'An error occurred while fetching platform statistics');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, []);
+
+  // Mock data for development/testing
+  const mockStats = {
+    stats: {
+      linkedin: {
+        success_rate: 0.95,
+        avg_response_time: 1.2,
+        job_count: 5243,
+        last_crawl_time: new Date().toISOString()
+      },
+      indeed: {
+        success_rate: 0.88,
+        avg_response_time: 1.5,
+        job_count: 3127,
+        last_crawl_time: new Date().toISOString()
+      },
+      glassdoor: {
+        success_rate: 0.92,
+        avg_response_time: 1.8,
+        job_count: 2845,
+        last_crawl_time: new Date().toISOString()
+      }
+    }
+  };
+
+  // Use mock data if API fails (for demo purposes)
+  const displayStats = stats || mockStats;
+
+  return (
+    <Container maxWidth="lg" sx={{ py: 8 }}>
+      <Typography 
+        variant="h2" 
+        sx={{ 
+          mb: 6,
+          fontWeight: 600,
+        }}
+      >
+        Platform Statistics
+      </Typography>
+      
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : error ? (
+        <>
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            {error} - Showing mock data for demonstration purposes.
+          </Alert>
+          <Grid container spacing={3}>
+            {Object.entries(displayStats.stats || {}).map(([platform, platformStats]) => (
+              <Grid item xs={12} md={6} lg={4} key={platform}>
+                <Card 
+                  sx={{ 
+                    p: 4,
+                    height: '100%',
+                    border: '1px solid #d2d2d7',
+                    borderRadius: 2,
+                  }}
+                >
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      mb: 2,
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {platform}
+                  </Typography>
+                  
+                  <Grid container spacing={2}>
+                    <Grid item xs={6}>
+                      <Typography variant="body2" color="text.secondary">
+                        Success Rate:
+                      </Typography>
+                      <Typography variant="body1">
+                        {(platformStats.success_rate * 100).toFixed(0)}%
+                      </Typography>
+                    </Grid>
+                    
+                    <Grid item xs={6}>
+                      <Typography variant="body2" color="text.secondary">
+                        Response Time:
+                      </Typography>
+                      <Typography variant="body1">
+                        {platformStats.avg_response_time.toFixed(2)}s
+                      </Typography>
+                    </Grid>
+                    
+                    <Grid item xs={6}>
+                      <Typography variant="body2" color="text.secondary">
+                        Jobs Found:
+                      </Typography>
+                      <Typography variant="body1">
+                        {platformStats.job_count}
+                      </Typography>
+                    </Grid>
+                    
+                    <Grid item xs={6}>
+                      <Typography variant="body2" color="text.secondary">
+                        Last Crawl:
+                      </Typography>
+                      <Typography variant="body1">
+                        {platformStats.last_crawl_time ? new Date(platformStats.last_crawl_time).toLocaleString() : 'Never'}
+                      </Typography>
+                    </Grid>
+                  </Grid>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </>
+      ) : (
+        <Grid container spacing={3}>
+          {Object.entries(displayStats.stats || {}).map(([platform, platformStats]) => (
+            <Grid item xs={12} md={6} lg={4} key={platform}>
+              <Card 
+                sx={{ 
+                  p: 4,
+                  height: '100%',
+                  border: '1px solid #d2d2d7',
+                  borderRadius: 2,
+                }}
+              >
+                <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    mb: 2,
+                    textTransform: 'capitalize',
+                  }}
+                >
+                  {platform}
+                </Typography>
+                
+                <Grid container spacing={2}>
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      Success Rate:
+                    </Typography>
+                    <Typography variant="body1">
+                      {(platformStats.success_rate * 100).toFixed(0)}%
+                    </Typography>
+                  </Grid>
+                  
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      Response Time:
+                    </Typography>
+                    <Typography variant="body1">
+                      {platformStats.avg_response_time.toFixed(2)}s
+                    </Typography>
+                  </Grid>
+                  
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      Jobs Found:
+                    </Typography>
+                    <Typography variant="body1">
+                      {platformStats.job_count}
+                    </Typography>
+                  </Grid>
+                  
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      Last Crawl:
+                    </Typography>
+                    <Typography variant="body1">
+                      {platformStats.last_crawl_time ? new Date(platformStats.last_crawl_time).toLocaleString() : 'Never'}
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      )}
+    </Container>
+  );
+};
+
 function App() {
   const location = useLocation();
   
@@ -413,6 +893,8 @@ function App() {
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/jobs" element={<JobSearch />} />
+            <Route path="/keywords" element={<KeywordAnalysis />} />
+            <Route path="/stats" element={<PlatformStats />} />
             <Route path="/resume" element={<ResumeBuilder />} />
             <Route path="/applications" element={<Applications />} />
           </Routes>

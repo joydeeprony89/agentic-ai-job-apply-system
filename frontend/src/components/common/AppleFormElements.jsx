@@ -13,7 +13,11 @@ import {
   Switch,
   Slider,
   styled,
-  useTheme
+  useTheme,
+  ListItemText,
+  OutlinedInput,
+  Box,
+  Chip
 } from '@mui/material';
 import { motion } from 'framer-motion';
 
@@ -196,4 +200,46 @@ export const AppleButton = ({ children, ...props }) => {
 
 export const AppleSlider = (props) => {
   return <StyledSlider {...props} />;
+};
+
+// Multi-select dropdown with checkboxes
+export const AppleMultiSelect = ({ label, options, value, onChange, ...props }) => {
+  const handleChange = (event) => {
+    const {
+      target: { value: newValue },
+    } = event;
+    onChange({
+      target: {
+        name: props.name,
+        value: typeof newValue === 'string' ? newValue.split(',') : newValue,
+      },
+    });
+  };
+
+  return (
+    <FormControl fullWidth>
+      {label && <InputLabel>{label}</InputLabel>}
+      <StyledSelect
+        multiple
+        value={value}
+        onChange={handleChange}
+        input={<OutlinedInput label={label} />}
+        renderValue={(selected) => (
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+            {selected.map((value) => (
+              <Chip key={value} label={value} size="small" />
+            ))}
+          </Box>
+        )}
+        {...props}
+      >
+        {options.map((option) => (
+          <MenuItem key={option.value} value={option.value}>
+            <Checkbox checked={value.indexOf(option.value) > -1} />
+            <ListItemText primary={option.label} />
+          </MenuItem>
+        ))}
+      </StyledSelect>
+    </FormControl>
+  );
 };

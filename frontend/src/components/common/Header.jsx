@@ -57,6 +57,8 @@ const Header = () => {
   const navItems = [
     { name: 'Dashboard', path: '/', icon: DashboardIcon },
     { name: 'Jobs', path: '/jobs', icon: JobSearchIcon },
+    { name: 'Keywords', path: '/keywords', icon: ResumeIcon },
+    { name: 'Stats', path: '/stats', icon: ApplicationIcon },
     { name: 'Resume', path: '/resume', icon: ResumeIcon },
     { name: 'Applications', path: '/applications', icon: ApplicationIcon }
   ];

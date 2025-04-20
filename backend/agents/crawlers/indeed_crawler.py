@@ -1,26 +1,26 @@
+"""
+Indeed job crawler.
+"""
 from typing import List, Dict, Any, Optional
 import re
-import json
-from datetime import datetime, timedelta
 from urllib.parse import quote
+from datetime import datetime
 from playwright.async_api import TimeoutError
 
-from core.mongodb import store_job_listings, update_crawl_stats
-from core.vector_store import batch_index_jobs
 from .base_crawler import BaseCrawler
 
 
-class LinkedInCrawler(BaseCrawler):
+class IndeedCrawler(BaseCrawler):
     """
-    LinkedIn job crawler.
+    Indeed job crawler.
     """
     def __init__(self):
-        super().__init__(domain="linkedin.com")
-        self.base_url = "https://www.linkedin.com/jobs/search"
+        super().__init__(domain="indeed.com")
+        self.base_url = "https://www.indeed.com/jobs"
     
     async def search(self, keywords: List[str], location: str) -> List[Dict[str, Any]]:
         """
-        Search for jobs on LinkedIn.
+        Search for jobs on Indeed.
         
         Args:
             keywords: List of search keywords
@@ -38,37 +38,33 @@ class LinkedInCrawler(BaseCrawler):
                 
                 # Construct search URL
                 keyword_string = ' '.join(keywords)
-                search_url = f"{self.base_url}/?keywords={quote(keyword_string)}&location={quote(location)}&f_TPR=r86400&sortBy=DD"
+                search_url = f"{self.base_url}?q={quote(keyword_string)}&l={quote(location)}&sort=date"
                 
-                # Navigate to LinkedIn jobs
+                # Navigate to Indeed jobs
                 if not await self._navigate(page, search_url):
                     self.update_stats(False)
                     return []
                 
                 # Wait for results
                 try:
-                    await page.wait_for_selector('.job-card-container', timeout=10000)
+                    await page.wait_for_selector('.job_seen_beacon, .jobsearch-ResultsList .result', timeout=10000)
                 except TimeoutError:
-                    # Try an alternative selector
-                    try:
-                        await page.wait_for_selector('.jobs-search__results-list li', timeout=5000)
-                    except TimeoutError:
-                        self.update_stats(False)
-                        return []
+                    self.update_stats(False)
+                    return []
                 
                 # Random delay to simulate human behavior
                 await self._random_delay(2.0, 4.0)
                 
                 # Extract job listings
-                job_cards = await page.query_selector_all('.job-card-container, .jobs-search__results-list li')
+                job_cards = await page.query_selector_all('.job_seen_beacon, .jobsearch-ResultsList .result')
                 
                 for card in job_cards:
                     try:
                         # Extract basic job info
-                        title_elem = await card.query_selector('.job-card-list__title, .base-search-card__title')
-                        company_elem = await card.query_selector('.job-card-container__company-name, .base-search-card__subtitle')
-                        location_elem = await card.query_selector('.job-card-container__metadata-item, .job-search-card__location')
-                        link_elem = await card.query_selector('a')
+                        title_elem = await card.query_selector('h2.jobTitle, .jcs-JobTitle')
+                        company_elem = await card.query_selector('.companyName, .companyOverviewLink')
+                        location_elem = await card.query_selector('.companyLocation')
+                        link_elem = await card.query_selector('h2.jobTitle a, .jcs-JobTitle a')
                         
                         if not title_elem or not link_elem:
                             continue
@@ -76,14 +72,25 @@ class LinkedInCrawler(BaseCrawler):
                         title = await title_elem.inner_text()
                         company = await company_elem.inner_text() if company_elem else "Unknown Company"
                         job_location = await location_elem.inner_text() if location_elem else location
-                        url = await link_elem.get_attribute('href')
+                        
+                        # Get the relative URL and convert to absolute
+                        relative_url = await link_elem.get_attribute('href')
+                        url = f"https://www.indeed.com{relative_url}" if relative_url.startswith('/') else relative_url
                         
                         # Extract job ID from URL
-                        job_id_match = re.search(r'(?:jobs|view)/(\d+)', url)
+                        job_id_match = re.search(r'jk=([a-zA-Z0-9]+)', url)
                         job_id = job_id_match.group(1) if job_id_match else None
                         
                         if not job_id:
                             continue
+                        
+                        # Try to extract salary if available
+                        salary_elem = await card.query_selector('.salary-snippet-container, .metadataContainer .attribute:has-text("$")')
+                        salary = await salary_elem.inner_text() if salary_elem else None
+                        
+                        # Try to extract job type
+                        job_type_elem = await card.query_selector('.metadata:has-text("Full-time"), .metadata:has-text("Part-time")')
+                        job_type = await job_type_elem.inner_text() if job_type_elem else None
                         
                         # Basic job data
                         job = {
@@ -91,11 +98,10 @@ class LinkedInCrawler(BaseCrawler):
                             'company': company.strip(),
                             'location': job_location.strip(),
                             'url': url,
-                            'external_id': f"linkedin-{job_id}",
-                            'source': 'linkedin',
-                            'crawl_date': datetime.now().isoformat(),
-                            'keywords': keywords,
-                            'description': ""  # Will be filled in detail crawl
+                            'source': 'indeed',
+                            'search_date': datetime.now().isoformat(),
+                            'salary': salary.strip() if salary else None,
+                            'job_type': job_type.strip() if job_type else None,
                         }
                         
                         jobs.append(job)
@@ -105,12 +111,12 @@ class LinkedInCrawler(BaseCrawler):
                             break
                     
                     except Exception as e:
-                        print(f"Error extracting job card: {e}")
+                        print(f"Error extracting Indeed job card: {e}")
                         continue
                 
-                # Get job details for each job
+                # Get job details for first 5 jobs
                 detailed_jobs = []
-                for job in jobs[:5]:  # Limit detailed crawls to 5 jobs
+                for job in jobs[:5]:
                     try:
                         job_details = await self._get_job_details(page, job['url'])
                         if job_details:
@@ -118,29 +124,18 @@ class LinkedInCrawler(BaseCrawler):
                         else:
                             detailed_jobs.append(job)
                     except Exception as e:
-                        print(f"Error getting job details: {e}")
+                        print(f"Error getting Indeed job details: {e}")
                         detailed_jobs.append(job)
-                
-                # Store jobs in MongoDB
-                if detailed_jobs:
-                    await store_job_listings(detailed_jobs)
-                    
-                    # Index jobs in vector database
-                    await batch_index_jobs(detailed_jobs)
                 
                 search_success = True
                 jobs = detailed_jobs + jobs[5:]  # Combine detailed and non-detailed jobs
         
         except Exception as e:
-            print(f"LinkedIn crawler error: {e}")
+            print(f"Indeed crawler error: {e}")
             search_success = False
         
         # Update crawler stats
         self.update_stats(search_success)
-        await update_crawl_stats("linkedin", 
-                                len(jobs) if search_success else 0,
-                                0 if search_success else 1, 
-                                keywords)
         
         return jobs
     
@@ -160,7 +155,7 @@ class LinkedInCrawler(BaseCrawler):
         
         # Wait for job details to load
         try:
-            await page.wait_for_selector('.jobs-description-content, .description__text', timeout=10000)
+            await page.wait_for_selector('#jobDescriptionText', timeout=10000)
         except TimeoutError:
             return None
         
@@ -168,31 +163,9 @@ class LinkedInCrawler(BaseCrawler):
         await self._random_delay(1.0, 2.0)
         
         # Extract job description
-        description_elem = await page.query_selector('.jobs-description-content, .description__text')
+        description_elem = await page.query_selector('#jobDescriptionText')
         description = await description_elem.inner_text() if description_elem else ""
         
-        # Extract additional details
-        details = {}
-        
-        # Try to extract salary
-        salary_elem = await page.query_selector('.compensation-information, .jobs-unified-top-card__job-insight span:has-text("$")')
-        if salary_elem:
-            salary_text = await salary_elem.inner_text()
-            details['salary_text'] = salary_text
-        
-        # Try to extract job type
-        job_type_elem = await page.query_selector('.jobs-unified-top-card__job-insight:has-text("Employment type")')
-        if job_type_elem:
-            job_type = await job_type_elem.inner_text()
-            details['job_type'] = job_type.replace('Employment type', '').strip()
-        
-        # Try to extract posting date
-        date_elem = await page.query_selector('.jobs-unified-top-card__posted-date, .posted-time-ago__text')
-        if date_elem:
-            posted_date = await date_elem.inner_text()
-            details['posted_date_text'] = posted_date
-        
         return {
-            'description': description,
-            'details': details
+            'description': description
         }
