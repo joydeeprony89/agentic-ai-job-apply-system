@@ -1,6 +1,12 @@
 from typing import List, Dict, Any, Optional
-import asyncio
 import time
+import sys
+import os
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+# Add the parent directory to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from datetime import datetime
 import sys
 import os
@@ -11,11 +17,16 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from core.config import settings
 from core.logging import get_logger
 from services.llm_service import groq_service
+from services.llm_service import groq_service
 from .job_analysis_agent import JobAnalysisAgent
 from .search_strategy_agent import SearchStrategyAgent
 from .crawlers import LinkedInCrawler, NaukriCrawler
 from .crawlers.indeed_crawler import IndeedCrawler
 from .crawlers.glassdoor_crawler import GlassdoorCrawler
+
+# Configure event loop policy for Windows
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Get logger
 logger = get_logger(__name__)
@@ -142,25 +153,49 @@ class JobDiscoveryAgent:
         tasks = []
         
         # Create tasks for crawler-based platforms
-        for source in strategy["platforms"]:
+        for source in strategy.get("platforms", []):
             if crawler := self.crawlers.get(source):
-                task = asyncio.create_task(crawler.search(keywords, location))
-                tasks.append((source, task))
+                logger.info(f"Creating search task for {source}")
+                # Create coroutine but don't schedule it yet
+                coro = crawler.search(keywords, location)
+                tasks.append((source, coro))
         
+        if not tasks:
+            logger.warning("No valid platforms found for search")
+            return []
+            
         # Execute crawler tasks concurrently with limit
         max_concurrent = min(len(tasks), 3)  # Limit to 3 concurrent crawlers
-        for i in range(0, len(tasks), max_concurrent):
-            batch = tasks[i:i+max_concurrent]
-            batch_results = await asyncio.gather(*(task for _, task in batch), return_exceptions=True)
-            
-            for j, result in enumerate(batch_results):
-                source = batch[j][0]
-                if isinstance(result, Exception):
-                    logger.error(f"Error in {source} crawler: {result}")
-                else:
-                    logger.info(f"Found {len(result)} jobs from {source}")
-                    all_jobs.extend(result)
+        logger.info(f"Executing {len(tasks)} search tasks with max concurrency of {max_concurrent}")
         
+        try:
+            # Process tasks in batches to limit concurrency
+            for i in range(0, len(tasks), max_concurrent):
+                batch = tasks[i:i+max_concurrent]
+                batch_tasks = [asyncio.create_task(coro) for _, coro in batch]
+                batch_sources = [source for source, _ in batch]
+                
+                # Wait for all tasks in this batch to complete
+                batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+                
+                # Process results
+                for j, result in enumerate(batch_results):
+                    source = batch_sources[j]
+                    if isinstance(result, Exception):
+                        logger.error(f"Error in {source} crawler: {result}")
+                        import traceback
+                        logger.error(''.join(traceback.format_exception(type(result), result, result.__traceback__)))
+                    else:
+                        job_count = len(result) if isinstance(result, list) else 0
+                        logger.info(f"Found {job_count} jobs from {source}")
+                        if job_count > 0:
+                            all_jobs.extend(result)
+        except Exception as e:
+            logger.error(f"Error executing search tasks: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+        
+        logger.info(f"Total jobs found across all platforms: {len(all_jobs)}")
         return all_jobs
     
     async def get_platform_stats(self) -> Dict[str, Any]:

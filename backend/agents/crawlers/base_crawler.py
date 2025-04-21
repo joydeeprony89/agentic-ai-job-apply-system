@@ -2,12 +2,17 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 import random
 import asyncio
+import sys
 from datetime import datetime
 from urllib.parse import urlparse
 from playwright.async_api import async_playwright, Browser, Page, TimeoutError
 
 from core.config import settings
 from .rate_limiter import rate_limiter
+
+# Configure event loop policy for Windows
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 class BaseCrawler(ABC):

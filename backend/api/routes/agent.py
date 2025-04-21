@@ -40,7 +40,7 @@ class JobSearchRequest(BaseModel):
         schema_extra = {
             "example": {
                 "keywords": ["python", "machine learning", "data science"],
-                "location": "San Francisco, CA"
+                "location": "India, Bengaluru"
             }
         }
 

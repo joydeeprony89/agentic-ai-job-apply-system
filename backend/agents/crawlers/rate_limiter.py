@@ -3,9 +3,14 @@ Rate limiter for web crawlers.
 """
 import time
 import asyncio
+import sys
 from typing import Dict, Any, Optional, Callable
 import random
 from datetime import datetime, timedelta
+
+# Configure event loop policy for Windows
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 class RateLimiter:
