@@ -2,9 +2,15 @@ from typing import List, Dict, Any, Optional
 import asyncio
 import time
 from datetime import datetime
+import sys
+import os
+
+# Add the parent directory to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from core.config import settings
 from core.logging import get_logger
+from services.llm_service import groq_service
 from .job_analysis_agent import JobAnalysisAgent
 from .search_strategy_agent import SearchStrategyAgent
 from .crawlers import LinkedInCrawler, NaukriCrawler
@@ -21,9 +27,21 @@ class JobDiscoveryAgent:
     Performs real-time searches without data storage.
     """
     def __init__(self, groq_api_key: str = None):
-        self.groq_api_key = groq_api_key or settings.GROQ_API_KEY
-        self.job_analyzer = JobAnalysisAgent(self.groq_api_key)
-        self.strategy_agent = SearchStrategyAgent(self.groq_api_key)
+        """
+        Initialize the Job Discovery Agent.
+        
+        Args:
+            groq_api_key: Groq API key. If None, uses the one from settings.
+        """
+        # Pass the API key to the Groq service if provided
+        if groq_api_key:
+            self.groq_service = groq_service
+            self.groq_service.api_key = groq_api_key
+        else:
+            self.groq_service = groq_service
+            
+        self.job_analyzer = JobAnalysisAgent(groq_api_key)
+        self.strategy_agent = SearchStrategyAgent(groq_api_key)
         
         # Initialize crawlers
         self.crawlers = {
@@ -124,7 +142,7 @@ class JobDiscoveryAgent:
         tasks = []
         
         # Create tasks for crawler-based platforms
-        for source in strategy['platforms']:
+        for source in strategy["platforms"]:
             if crawler := self.crawlers.get(source):
                 task = asyncio.create_task(crawler.search(keywords, location))
                 tasks.append((source, task))

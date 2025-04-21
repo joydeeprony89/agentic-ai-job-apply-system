@@ -38,7 +38,9 @@ class Settings(BaseSettings):
     
     # LLM settings
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "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")
-    DEFAULT_LLM_MODEL: str = os.getenv("DEFAULT_LLM_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+    GROQ_API_BASE_URL: str = os.getenv("GROQ_API_BASE_URL", "https://api.groq.com/openai/v1/chat/completions")
+    DEFAULT_LLM_MODEL: str = os.getenv("DEFAULT_LLM_MODEL", "llama3-8b-8192")
+    FALLBACK_LLM_MODEL: str = os.getenv("FALLBACK_LLM_MODEL", "llama3-70b-8192")
     
     # Database settings
     MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")

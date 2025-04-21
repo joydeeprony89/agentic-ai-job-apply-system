@@ -1,32 +1,40 @@
 from typing import List, Dict, Any, Optional
-import json
-import httpx
-import re
-from tenacity import retry, wait_exponential, stop_after_attempt
+import sys
+import os
 
+# Add the parent directory to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from services.llm_service import groq_service, LLMServiceError
 from core.config import settings
+from core.logging import get_logger
 
+# Get logger
+logger = get_logger(__name__)
 
 class SearchStrategyAgent:
     """
     Agent responsible for determining optimal job search strategies.
     """
     def __init__(self, groq_api_key: str = None):
-        self.api_key = groq_api_key or settings.GROQ_API_KEY
-        self.base_url = "https://api.groq.com/v1/chat/completions"
-        self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
+        """
+        Initialize the Search Strategy Agent.
+        
+        Args:
+            groq_api_key: Groq API key. If None, uses the one from settings.
+        """
+        # Pass the API key to the Groq service if provided
+        if groq_api_key:
+            self.groq_service = groq_service
+            self.groq_service.api_key = groq_api_key
+        else:
+            self.groq_service = groq_service
+            
         self.available_platforms = [
             "linkedin", "indeed", "glassdoor", "naukri", "monster", 
             "ziprecruiter", "dice", "stackoverflow"
         ]
 
-    @retry(
-        wait=wait_exponential(multiplier=1, min=4, max=10),
-        stop=stop_after_attempt(3)
-    )
     async def optimize_search_strategy(
         self, 
         keywords: List[str], 
@@ -43,36 +51,25 @@ class SearchStrategyAgent:
             
         Returns:
             Dictionary with search strategy
+            
+        Raises:
+            LLMServiceError: If there's an error with the LLM service
         """
+        logger.info(f"Optimizing search strategy for keywords={keywords}, location={location}")
         prompt = self._create_strategy_prompt(keywords, location, platform_performance)
-        response = await self._call_groq(prompt)
-        strategy = self._parse_strategy_response(response)
+        
+        # Call Groq API and extract JSON content
+        response = await self.groq_service.generate_completion(prompt)
+        
+        try:
+            strategy = self.groq_service.extract_json_content(response)
+        except LLMServiceError:
+            # If JSON parsing fails, return a default strategy
+            logger.warning("Failed to parse strategy response, using default strategy")
+            strategy = self._get_default_strategy()
         
         # Validate and fix the strategy
         return self._validate_strategy(strategy, platform_performance)
-
-    async def _call_groq(self, prompt: str) -> Dict[str, Any]:
-        """
-        Call Groq API.
-        
-        Args:
-            prompt: Prompt to send to Groq
-            
-        Returns:
-            Groq API response
-        """
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.base_url,
-                headers=self.headers,
-                json={
-                    "model": "mixtral-8x7b-32768",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.7,
-                    "max_tokens": 2000
-                }
-            )
-            return response.json()
 
     def _create_strategy_prompt(
         self, 
@@ -100,64 +97,41 @@ class SearchStrategyAgent:
                 performance_info += f"Avg time: {metrics.get('avg_time', 0):.1f}s\n"
         
         return f"""
-        Create an optimal job search strategy for:
-        Keywords: {', '.join(keywords)}
-        Location: {location}
+        Create a targeted job search strategy using the provided keywords and location.
 
-        {performance_info}
-
-        Available platforms: {', '.join(self.available_platforms)}
-
-        Consider:
-        1. Best platforms to search based on keywords and location
-        2. Search priority (which platform first) based on performance metrics if available
-        3. Filters to apply (e.g., date posted, job type, experience level)
-        4. Location-specific considerations
-        5. Industry-specific considerations
-        6. Keyword variations that might yield better results
-
-        Format: Return as a JSON object with these fields:
-        - platforms: list of platforms in priority order (at least 3 if available)
-        - filters: object with filter criteria
-        - keywordVariations: list of alternative keyword combinations to try
-        - specialConsiderations: array of special notes
-
-        Return ONLY the JSON object, no additional text.
+        Context:
+            1. Focus only on closely related technical skills, modern job titles, and industry-specific terminology that are commonly used in job descriptions.
+            2. Avoid generic terms or excessive keyword expansion.
+        Use available performance metrics to:
+            1. Recommend top 3–5 platforms in priority order.
+            2. Suggest effective job search filters (e.g., recency, job type).
+            3. Propose concise keyword variations that can enhance search accuracy.
+            4. Highlight any special considerations based on the location and industry.
+        Input: Keywords: {keywords} Location: {location} Platform metrics: {performance_info}.
+        Output: Return a well-formatted JSON with these keys:
+                platforms: [ranked list of platforms]
+                filters: object with filter criteria
+                keywordVariations: [short, meaningful variations]
+                specialConsiderations: [specific notes for better targeting]
+        Return only a valid, minified JSON object.
+        Do not include explanations, markdown formatting, code blocks, or escaped characters.
+        Do not wrap the JSON in quotes. Output must be directly parsable by json.loads().
+        Your output must begin with "{" and end with "}".
         """
 
-    def _parse_strategy_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
+    def _get_default_strategy(self) -> Dict[str, Any]:
         """
-        Parse Groq API response.
+        Get default search strategy.
         
-        Args:
-            response: Groq API response
-            
         Returns:
-            Parsed strategy dictionary
+            Default strategy dictionary
         """
-        try:
-            content = response['choices'][0]['message']['content']
-            
-            # Extract JSON from the response (in case there's additional text)
-            json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
-            if json_match:
-                content = json_match.group(1)
-            else:
-                # Try to find JSON object without code block
-                json_match = re.search(r'(\{.*\})', content, re.DOTALL)
-                if json_match:
-                    content = json_match.group(1)
-            
-            return json.loads(content)
-        except (KeyError, json.JSONDecodeError, AttributeError) as e:
-            print(f"Error parsing strategy response: {e}")
-            # Return default strategy
-            return {
-                "platforms": ["linkedin", "indeed", "glassdoor"],
-                "filters": {"datePosted": "past week"},
-                "keywordVariations": [],
-                "specialConsiderations": []
-            }
+        return {
+            "platforms": ["linkedin", "indeed", "glassdoor"],
+            "filters": {"datePosted": "past week"},
+            "keywordVariations": [],
+            "specialConsiderations": []
+        }
 
     def _validate_strategy(
         self, 
@@ -185,7 +159,7 @@ class SearchStrategyAgent:
             strategy["specialConsiderations"] = []
         
         # Validate platforms
-        valid_platforms = [p for p in strategy["platforms"] if p in self.available_platforms]
+        valid_platforms = [p for p in strategy["platforms"] if p.lower() in [ap.lower() for ap in self.available_platforms]]
         
         # If no valid platforms or too few, add default platforms
         if len(valid_platforms) < 3:
@@ -214,4 +188,22 @@ class SearchStrategyAgent:
         
         strategy["platforms"] = valid_platforms[:5]  # Limit to 5 platforms
         
-        return strategy
+        # Convert to the format expected by the API
+        formatted_strategy = {"platforms": []}
+        for i, platform in enumerate(strategy["platforms"], 1):
+            formatted_strategy["platforms"].append(platform)
+            formatted_strategy[platform] = {
+                "priority": i,
+                "keywords": strategy.get("keywordVariations", [])[:5] or [""],  # Use empty string if no variations
+                "filters": strategy.get("filters", {})
+            }
+            
+            # Ensure filters is a dictionary
+            if not isinstance(formatted_strategy[platform]["filters"], dict):
+                formatted_strategy[platform]["filters"] = {}
+                
+            # Add date_posted filter if not present
+            if "date_posted" not in formatted_strategy[platform]["filters"]:
+                formatted_strategy[platform]["filters"]["date_posted"] = "past_week"
+        
+        return formatted_strategy

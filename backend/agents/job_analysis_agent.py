@@ -1,51 +1,106 @@
 from typing import List, Dict, Any
-import httpx
-from tenacity import retry, wait_exponential
+import sys
+import os
+
+# Add the parent directory to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from services.llm_service import groq_service, LLMServiceError
+from core.logging import get_logger
+
+# Get logger
+logger = get_logger(__name__)
 
 class JobAnalysisAgent:
-    def __init__(self, groq_api_key: str):
-        self.api_key = groq_api_key
-        self.base_url = "https://api.groq.com/v1/chat/completions"
-        self.headers = {
-            "Authorization": f"Bearer {groq_api_key}",
-            "Content-Type": "application/json"
-        }
+    def __init__(self, groq_api_key: str = None):
+        """
+        Initialize the Job Analysis Agent.
+        
+        Args:
+            groq_api_key: Groq API key. If None, uses the one from settings.
+        """
+        # Pass the API key to the Groq service if provided
+        if groq_api_key:
+            self.groq_service = groq_service
+            self.groq_service.api_key = groq_api_key
+        else:
+            self.groq_service = groq_service
 
-    @retry(wait=wait_exponential(multiplier=1, min=4, max=10))
     async def analyze_keywords(self, keywords: List[str]) -> List[str]:
+        """
+        Analyze keywords using Groq API.
+        
+        Args:
+            keywords: List of keywords to analyze
+            
+        Returns:
+            List of enhanced keywords
+            
+        Raises:
+            LLMServiceError: If there's an error with the LLM service
+        """
+        logger.info(f"Analyzing keywords: {keywords}")
         prompt = self._create_keyword_analysis_prompt(keywords)
-        response = await self._call_groq(prompt)
-        return self._parse_keyword_response(response)
+        
+        # Call Groq API and extract list content
+        response = await self.groq_service.generate_completion(prompt)
+        return self.groq_service.extract_list_content(response)
 
-    @retry(wait=wait_exponential(multiplier=1, min=4, max=10))
     async def categorize_job(self, description: str) -> Dict[str, Any]:
+        """
+        Categorize job description using Groq API.
+        
+        Args:
+            description: Job description to categorize
+            
+        Returns:
+            Dictionary with job categories
+            
+        Raises:
+            LLMServiceError: If there's an error with the LLM service
+        """
+        logger.info("Categorizing job description")
         prompt = self._create_job_analysis_prompt(description)
-        response = await self._call_groq(prompt)
-        return self._parse_job_analysis_response(response)
-
-    async def _call_groq(self, prompt: str) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.base_url,
-                headers=self.headers,
-                json={
-                    "model": "mixtral-8x7b-32768",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.7,
-                    "max_tokens": 2000
-                }
-            )
-            return response.json()
+        
+        # Call Groq API and extract JSON content
+        response = await self.groq_service.generate_completion(prompt)
+        return self.groq_service.extract_json_content(response)
 
     def _create_keyword_analysis_prompt(self, keywords: List[str]) -> str:
+        """
+        Create prompt for keyword analysis.
+        
+        Args:
+            keywords: List of keywords to analyze
+            
+        Returns:
+            Prompt string
+        """
         return f"""
-        Analyze these job search keywords and suggest related terms:
+        Analyze the following job search keywords and suggest only the most relevant related terms.
+        Focus strictly on technical skills, modern job titles, and industry-specific terminology used in job descriptions.
+        Avoid generic terms, synonyms, or overly broad concepts.
+        
+        Do not include any explanation or introductory text.
+        Only return a concise, comma-separated list of 10–15 high-impact keywords only, list without additional commentary. 
+
+        Example output: ["python", "machine learning", "data science"].
         Keywords: {', '.join(keywords)}
-        Focus on technical skills, job titles, and industry-specific terms.
-        Format: Return as a comma-separated list.
+        Suggest only closely related keywords that would improve search results on job boards like LinkedIn, Indeed, Naukri, Glassdoor, or Glassdoor.
+        Limit results to job-relevant technical skills, roles, and industry jargon.
+        Do not include certifications, tools unless core to the keyword.
         """
 
     def _create_job_analysis_prompt(self, description: str) -> str:
+        """
+        Create prompt for job analysis.
+        
+        Args:
+            description: Job description to analyze
+            
+        Returns:
+            Prompt string
+        """
         return f"""
         Analyze this job description and extract:
         1. Required skills (technical and soft)
@@ -58,11 +113,3 @@ class JobAnalysisAgent:
         
         Format: Return as a JSON object with these fields.
         """
-
-    def _parse_keyword_response(self, response: Dict[str, Any]) -> List[str]:
-        content = response['choices'][0]['message']['content']
-        return [term.strip() for term in content.split(',')]
-
-    def _parse_job_analysis_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
-        content = response['choices'][0]['message']['content']
-        return content  # Assuming Groq returns properly formatted JSON

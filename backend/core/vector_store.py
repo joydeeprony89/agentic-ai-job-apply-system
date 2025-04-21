@@ -134,7 +134,7 @@ async def batch_index_jobs(jobs: List[Dict[str, Any]]) -> Tuple[int, int]:
     
     for job in jobs:
         try:
-            job_id = job.get("id") or job.get("external_id")
+            job_id = job.get("_id") or job.get("id") or job.get("external_id")
             if not job_id:
                 error_count += 1
                 continue

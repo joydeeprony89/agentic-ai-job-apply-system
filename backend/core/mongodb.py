@@ -67,6 +67,12 @@ async def get_job_listings_by_query(query: Dict[str, Any], limit: int = 100) -> 
 async def update_crawl_stats(source: str, success_count: int, error_count: int, keywords: List[str]) -> None:
     """
     Update crawl statistics.
+    
+    Args:
+        source: Source of the crawl (e.g., 'linkedin')
+        success_count: Number of successful crawls
+        error_count: Number of failed crawls
+        keywords: Keywords used for the crawl
     """
     if source not in crawl_stats:
         crawl_stats[source] = {
